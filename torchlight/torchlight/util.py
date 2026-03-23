@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 import argparse
+import logging
 import os
 import sys
 import traceback
 import time
 import pickle
 from collections import OrderedDict
+from logging import Logger
+
 import yaml
 import h5py
 import numpy as np
@@ -13,7 +16,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
-from torchpack.runner.hooks import PaviLogger
 
 
 class IO():
@@ -29,13 +31,7 @@ class IO():
 
     def log(self, *args, **kwargs):
         try:
-            if self.pavi_logger is None:
-                url = 'http://pavi.parrotsdnn.org/log'
-                with open(self.session_file, 'r') as f:
-                    info = dict(session_file=self.session_file, session_text=f.read(), model_text=self.model_text)
-                self.pavi_logger = PaviLogger(url)
-                self.pavi_logger.connect(self.work_dir, info=info)
-            self.pavi_logger.log(*args, **kwargs)
+            print("Why")
         except:  #pylint: disable=W0702
             pass
 
