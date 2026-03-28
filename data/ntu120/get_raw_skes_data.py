@@ -28,7 +28,7 @@ def get_raw_bodies_data(skes_path, ske_name, frames_drop_skes, frames_drop_logge
     ske_file = osp.join(skes_path, ske_name + '.skeleton')
     assert osp.exists(ske_file), 'Error: Skeleton file %s not found' % ske_file
     # Read all data from .skeleton file into a list (in string format)
-    print('Reading data from %s' % ske_file[-29:])
+    print('Reading data from %s' % skes_path+ske_file[-29:])
     with open(ske_file, 'r') as fr:
         str_data = fr.readlines()
 
@@ -81,7 +81,7 @@ def get_raw_bodies_data(skes_path, ske_name, frames_drop_skes, frames_drop_logge
     assert num_frames_drop < num_frames, \
         'Error: All frames data (%d) of %s is missing or lost' % (num_frames, ske_name)
     if num_frames_drop > 0:
-        frames_drop_skes[ske_name] = np.array(frames_drop, dtype=np.int)
+        frames_drop_skes[ske_name] = np.array(frames_drop, dtype=int)
         frames_drop_logger.info('{}: {} frames missed: {}\n'.format(ske_name, num_frames_drop,
                                                                     frames_drop))
 
@@ -113,13 +113,26 @@ def get_raw_skes_data():
     print('Found %d available skeleton files.' % num_files)
 
     raw_skes_data = []
-    frames_cnt = np.zeros(num_files, dtype=np.int)
+    frames_cnt = np.zeros(num_files, dtype=int)
 
-    for (idx, ske_name) in enumerate(skes_name):
+    # Added some checkpointing
+    # Create checkpoint file if it doesn't exist
+    saved_idx = 0
+    if not os.path.exists('./get_raw_skes_data_checkpoint.txt'):
+        with open('./get_raw_skes_data_checkpoint.txt', 'w') as fw:
+            fw.write(str(saved_idx))
+    else:
+        with open('./get_raw_skes_data_checkpoint.txt', 'r') as fr:
+            saved_idx = int(fr.readline())
+
+
+    for (idx, ske_name) in enumerate(skes_name[saved_idx:], start=saved_idx):
         bodies_data = get_raw_bodies_data(skes_path, ske_name, frames_drop_skes, frames_drop_logger)
         raw_skes_data.append(bodies_data)
         frames_cnt[idx] = bodies_data['num_frames']
+        # Every 1000 or so we should take a snapshot.
         if (idx + 1) % 1000 == 0:
+
             print('Processed: %.2f%% (%d / %d)' % \
                   (100.0 * (idx + 1) / num_files, idx + 1, num_files))
 
