@@ -1,3 +1,5 @@
+# This is a fork of CTR-GCN, please see below for info.
+
 # CTR-GCN
 This repo is the official implementation for [Channel-wise Topology Refinement Graph Convolution for Skeleton-Based Action Recognition](https://arxiv.org/abs/2107.12213). The paper is accepted to ICCV2021.
 
