@@ -1,8 +1,8 @@
-# command line: /mnt/c/Users/Reinhard/PycharmProjects/CTR-GCN/main.py --config ./config/nturgbd120-cross-subject/default.yaml --work-dir ./ --phase test --save-score True --weights ./pretrained_models/CTRGCN_NTU120_CSub_bone_85.7/runs-60-59040.pt --device 0
+# command line: CTR-GCN/main.py --config CTR-GCN/config/nturgbd120-cross-subject/default.yaml --work-dir CTR-GCN/ --phase test --save-score True --weights CTR-GCN/pretrained_models/CTRGCN_NTU120_CSub_bone_85.7/runs-60-59040.pt --device 0
 
 base_lr: 0.1
 batch_size: 64
-config: ./config/nturgbd120-cross-subject/default.yaml
+config: CTR-GCN/config/nturgbd120-cross-subject/default.yaml
 device:
 - 0
 eval_interval: 5
@@ -63,5 +63,5 @@ train_feeder_args:
   window_size: 64
 warm_up_epoch: 5
 weight_decay: 0.0004
-weights: ./pretrained_models/CTRGCN_NTU120_CSub_bone_85.7/runs-60-59040.pt
-work_dir: ./
+weights: CTR-GCN/pretrained_models/CTRGCN_NTU120_CSub_bone_85.7/runs-60-59040.pt
+work_dir: CTR-GCN/
