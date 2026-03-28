@@ -28,7 +28,7 @@ def get_raw_bodies_data(skes_path, ske_name, frames_drop_skes, frames_drop_logge
     ske_file = osp.join(skes_path, ske_name + '.skeleton')
     assert osp.exists(ske_file), 'Error: Skeleton file %s not found' % ske_file
     # Read all data from .skeleton file into a list (in string format)
-    print('Reading data from %s' % skes_path+ske_file[-29:])
+    # print('Reading data from %s' % skes_path+ske_file[-29:])
     with open(ske_file, 'r') as fr:
         str_data = fr.readlines()
 
@@ -112,10 +112,11 @@ def get_raw_skes_data():
     num_files = skes_name.size
     print('Found %d available skeleton files.' % num_files)
 
-    raw_skes_data = []
-    frames_cnt = np.zeros(num_files, dtype=int)
 
     # Added some checkpointing
+    # This constant is for how big each batch is.
+    CHECKPOINT_BATCH_SIZE = 11
+    raw_skes_data = []
     # Create checkpoint file if it doesn't exist
     saved_idx = 0
     if not os.path.exists('./get_raw_skes_data_checkpoint.txt'):
@@ -124,27 +125,65 @@ def get_raw_skes_data():
     else:
         with open('./get_raw_skes_data_checkpoint.txt', 'r') as fr:
             saved_idx = int(fr.readline())
+    # Same for frames
+    if not os.path.exists(osp.join(save_path, 'raw_data', 'frames_cnt.txt')):
+        with open(osp.join(save_path, 'raw_data', 'frames_cnt.txt'), 'w') as fw:
+            pass
 
-
+    if os.path.exists(save_data_pkl):
+        with open(save_data_pkl, 'rb') as fr:
+            raw_skes_data = pickle.load(fr)
+    ## Change below int to a constant that we want to do batches in.
+    frames_cnt = np.zeros(CHECKPOINT_BATCH_SIZE, dtype=int)
+    final = 0
+    total_frames = np.sum(np.loadtxt(osp.join(save_path, 'raw_data', 'frames_cnt.txt'), dtype=int))
     for (idx, ske_name) in enumerate(skes_name[saved_idx:], start=saved_idx):
+        final = idx
         bodies_data = get_raw_bodies_data(skes_path, ske_name, frames_drop_skes, frames_drop_logger)
         raw_skes_data.append(bodies_data)
-        frames_cnt[idx] = bodies_data['num_frames']
-        # Every 1000 or so we should take a snapshot.
-        if (idx + 1) % 1000 == 0:
-
+        frames_cnt[idx-saved_idx] = bodies_data['num_frames']
+        total_frames = total_frames + bodies_data['num_frames']
+        # Every 1000 or so we should take a snapshot. use a constant, see above.
+        if (idx+1) % CHECKPOINT_BATCH_SIZE == 0 and idx !=0:
+            # Update checkpoint index
+            saved_idx = idx + 1
+            # Add stuff
+            with open(save_data_pkl, 'wb') as fw:
+                pickle.dump(raw_skes_data, fw, pickle.HIGHEST_PROTOCOL)
+            with open(frames_drop_pkl, 'wb') as fw:
+                pickle.dump(frames_drop_skes, fw, pickle.HIGHEST_PROTOCOL)
+            with open('./get_raw_skes_data_checkpoint.txt', 'w') as fw:
+                fw.write(str(saved_idx))
+            with open(osp.join(save_path, 'raw_data', 'frames_cnt.txt'), 'a') as fw:
+                np.savetxt(fw, frames_cnt, fmt='%d')
+            with open(frames_drop_pkl, 'wb') as fw:
+                pickle.dump(frames_drop_skes, fw, pickle.HIGHEST_PROTOCOL)
+            # Finally, clear and reset frames_cnt arr.
+            frames_cnt = np.zeros(CHECKPOINT_BATCH_SIZE, dtype=int)
             print('Processed: %.2f%% (%d / %d)' % \
                   (100.0 * (idx + 1) / num_files, idx + 1, num_files))
+        if (idx + 1  == 1000 ):
+            break
 
+    # Commit whatever leftovers there are
     with open(save_data_pkl, 'wb') as fw:
         pickle.dump(raw_skes_data, fw, pickle.HIGHEST_PROTOCOL)
-    np.savetxt(osp.join(save_path, 'raw_data', 'frames_cnt.txt'), frames_cnt, fmt='%d')
-
-    print('Saved raw bodies data into %s' % save_data_pkl)
-    print('Total frames: %d' % np.sum(frames_cnt))
-
     with open(frames_drop_pkl, 'wb') as fw:
         pickle.dump(frames_drop_skes, fw, pickle.HIGHEST_PROTOCOL)
+    with open('./get_raw_skes_data_checkpoint.txt', 'w') as fw:
+        fw.write(str(final))
+    with open(osp.join(save_path, 'raw_data', 'frames_cnt.txt'), 'a') as fw:
+        # Plus one is because slice does up to but not including
+        np.savetxt(fw, frames_cnt[:final-saved_idx+1], fmt='%d')
+    with open(frames_drop_pkl, 'wb') as fw:
+        pickle.dump(frames_drop_skes, fw, pickle.HIGHEST_PROTOCOL)
+
+
+
+    print('Saved raw bodies data into %s' % save_data_pkl)
+    print('Total frames: %d' % np.sum(total_frames))
+
+
 
 if __name__ == '__main__':
     save_path = './'
@@ -163,8 +202,13 @@ if __name__ == '__main__':
     frames_drop_logger.addHandler(logging.FileHandler(osp.join(save_path, 'raw_data', 'frames_drop.log')))
     frames_drop_skes = dict()
 
+    if os.path.exists(frames_drop_pkl):
+        with open(frames_drop_pkl, 'rb') as fr:
+            frames_drop_skes = pickle.load(fr)
+
     get_raw_skes_data()
 
     with open(frames_drop_pkl, 'wb') as fw:
         pickle.dump(frames_drop_skes, fw, pickle.HIGHEST_PROTOCOL)
+
         
