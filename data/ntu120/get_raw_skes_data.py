@@ -149,7 +149,7 @@ def get_raw_skes_data():
         batch_size = int(np.ceil(num_files/num_workers))
         batch_num = 0
         threads = []
-        for idx in range(0, 10, batch_size):
+        for idx in range(0, num_files, batch_size):
             batch_num = batch_num + 1
             batch_end = min(idx + batch_size, num_files)
             skes_batch = skes_name[idx:batch_end]
