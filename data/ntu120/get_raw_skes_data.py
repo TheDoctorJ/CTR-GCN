@@ -206,5 +206,6 @@ if __name__ == '__main__':
     frames_drop_logger.setLevel(logging.INFO)
     frames_drop_logger.addHandler(logging.FileHandler(osp.join(save_path, 'raw_data', 'frames_drop.log')))
 
-    get_raw_skes_data()
+    # get_raw_skes_data()
+    serialize_pickles()
         
