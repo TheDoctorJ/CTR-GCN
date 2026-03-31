@@ -1,12 +1,9 @@
 import pickle
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 from deepdiff import DeepDiff
-from sympy import false
 
-import data.ntu120.get_raw_skes_data as get_raw_skes_data
 from data.ntu120.get_raw_skes_data_original import OriginalSkellyProcessor
 from data.ntu120.get_raw_skes_data import SkeletonProcessor
 

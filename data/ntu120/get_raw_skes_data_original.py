@@ -1,20 +1,12 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
-import argparse
 import os.path as osp
 import os
-from concurrent.futures.thread import ThreadPoolExecutor
 import numpy as np
 import pickle
 import logging
 
-from torch.distributed.rpc import new_method
-
-from data.ntu.seq_transformation import stat_path
-
-
-class SkeletonProcessor:
-
+class OriginalSkellyProcessor:
     save_path = './'
     data_path = './'
     stat_path = ''
@@ -22,6 +14,7 @@ class SkeletonProcessor:
     save_data_pkl = ''
     frames_drop_pkl = ''
     skes_path = ''
+    frames_drop_skes = dict()
 
     def __init__(self):
         self.frames_drop_logger = None
@@ -47,7 +40,6 @@ class SkeletonProcessor:
         ske_file = osp.join(skes_path, ske_name + '.skeleton')
         assert osp.exists(ske_file), 'Error: Skeleton file %s not found' % ske_file
         # Read all data from .skeleton file into a list (in string format)
-        # print('Reading data from %s' % skes_path+ske_file[-29:])
         with open(ske_file, 'r') as fr:
             str_data = fr.readlines()
 
@@ -112,28 +104,7 @@ class SkeletonProcessor:
         return {'name': ske_name, 'data': bodies_data, 'num_frames': num_frames - num_frames_drop}
 
 
-    def batch_process(self, skes_batch, indices, batch_num):
-        raw_skes_data = []
-        frames_cnt = np.zeros(skes_batch.size)
-        frames_drop_skes = dict()
-
-        for (idx, skes_name) in enumerate(skes_batch):
-            bodies_data = self.get_raw_bodies_data(self.skes_path, skes_name, frames_drop_skes, self.frames_drop_logger)
-            raw_skes_data.append(bodies_data)
-            frames_cnt[idx] = bodies_data['num_frames']
-
-        batch_file_name = "{}.pkl".format(batch_num)
-        with open(osp.join(self.save_path, 'raw_data', 'raw_skes_batches', batch_file_name), 'wb') as fw:
-            pickle.dump(raw_skes_data, fw, pickle.HIGHEST_PROTOCOL)
-        with open(osp.join(self.save_path, 'raw_data', 'frames_drop_skes_batches', batch_file_name), 'wb') as fw:
-            pickle.dump(frames_drop_skes, fw, pickle.HIGHEST_PROTOCOL)
-        with open(osp.join(self.save_path, 'raw_data', 'frame_batches', str(batch_num) + '.txt'), 'wb') as fw:
-            np.savetxt(fw, frames_cnt, fmt='%d')
-
-        return batch_num, skes_batch.size
-
-
-    def get_raw_skes_data(self, num_workers=192, num_files=None):
+    def get_raw_skes_data(self, num_files=None):
         # # save_path = './data'
         # # skes_path = '/data/pengfei/NTU/nturgb+d_skeletons/'
         # stat_path = osp.join(save_path, 'statistics')
@@ -153,72 +124,33 @@ class SkeletonProcessor:
             num_files = skes_name.size
         print('Found %d available skeleton files.' % num_files)
 
-        # 192 threads per core
-        # Maybe we can use hd5py and some multithreading
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            # Batch size is num of skes_name/num_of_threads
-            batch_size = int(np.ceil(num_files / num_workers))
-            batch_num = 0
-            threads = []
-            for idx in range(0, num_files, batch_size):
-                batch_num = batch_num + 1
-                batch_end = min(idx + batch_size, num_files)
-                skes_batch = skes_name[idx:batch_end]
-                indices = np.arange(idx, batch_end)
-                new_thread = executor.submit(self.batch_process, skes_batch, indices, batch_num)
-                threads.append(new_thread)
-            for threadWork in threads:
-                batch_num, count = threadWork.result()
-                print(f'Batch {batch_num} processed: {count} skeletons')
-        final = self.serialize_pickles()
-        return final
+        raw_skes_data = []
+        frames_cnt = np.zeros(num_files, dtype=int)
 
-    def serialize_pickles(self):
-        final = dict()
+        for (idx, ske_name) in enumerate(skes_name):
+            bodies_data = self.get_raw_bodies_data(self.skes_path, ske_name, self.frames_drop_skes, self.frames_drop_logger)
+            raw_skes_data.append(bodies_data)
+            frames_cnt[idx] = bodies_data['num_frames']
+            if (idx + 1) % 10 == 0:
+                print('Processed: %.2f%% (%d / %d)' % \
+                      (100.0 * (idx + 1) / num_files, idx + 1, num_files))
+            if idx + 1 == num_files:
+                break
 
-        frames_cnt = []
-        print(os.getcwd())
-        folder = os.path.join(self.save_path, 'raw_data', 'frame_batches')
-        files = os.listdir(folder)
-        files.sort(key=lambda x: int(x.split('.')[0]) )
-
-        for filename in files:
-            # make sure not to parse the placeholder file
-            if not filename.endswith('.txt'): pass
-            with open(osp.join(folder, filename), 'r') as fr:
-                frames_cnt.extend(np.atleast_1d(np.loadtxt(fr, dtype=int)))
-            os.remove(osp.join(folder, filename))
-
+        with open(self.save_data_pkl, 'wb') as fw:
+            pickle.dump(raw_skes_data, fw, pickle.HIGHEST_PROTOCOL)
         np.savetxt(osp.join(self.save_path, 'raw_data', 'frames_cnt.txt'), frames_cnt, fmt='%d')
 
-        folder = os.path.join(self.save_path, 'raw_data', 'frames_drop_skes_batches')
-        files = os.listdir(folder)
-        files.sort(key=lambda x: int(x.split('.')[0]) )
-        frames_drop_skes_pickle_files = dict()
-        for filename in files:
-            if not filename.endswith('.pkl'): pass
-            with open(osp.join(folder, filename), 'rb') as fr:
-                loaded_pickle = pickle.load(fr)
-                frames_drop_skes_pickle_files.update(loaded_pickle)
-            os.remove(osp.join(folder, filename))
-        pickle.dump(frames_drop_skes_pickle_files, open(osp.join(self.save_path, 'raw_data', 'frames_drop_skes.pkl'), 'wb'))
+        print('Saved raw bodies data into %s' % self.save_data_pkl)
+        print('Total frames: %d' % np.sum(frames_cnt))
 
-        raw_skes_data_pickle_files = []
-        folder = os.path.join(self.save_path, 'raw_data', 'raw_skes_batches')
-        files = os.listdir(folder)
-        files.sort(key=lambda x: int(x.split('.')[0]) )
-        for filename in files:
-            if not filename.endswith('.pkl'): pass
-            with open(osp.join(folder, filename), 'rb') as fr:
-                loaded_pickle = pickle.load(fr)
-                raw_skes_data_pickle_files.extend(loaded_pickle)
-            os.remove(osp.join(folder, filename))
-        pickle.dump(raw_skes_data_pickle_files, open(osp.join(self.save_path, 'raw_data', 'raw_skes_data.pkl'), 'wb'))
+        with open(self.frames_drop_pkl, 'wb') as fw:
+            pickle.dump(self.frames_drop_skes, fw, pickle.HIGHEST_PROTOCOL)
 
+        final = dict()
         final['frames_cnt'] = frames_cnt
-        final['frames_drop_skes_pickle_files'] = frames_drop_skes_pickle_files
-        final['raw_skes_data_pickle_files'] = raw_skes_data_pickle_files
-
+        final['raw_skes_data'] = raw_skes_data
+        final['frames_drop_skes'] = self.frames_drop_skes
 
     def setup_paths(self, save_path, data_path):
         self.save_path = save_path
@@ -237,25 +169,29 @@ class SkeletonProcessor:
         self.frames_drop_logger.setLevel(logging.INFO)
         self.frames_drop_logger.addHandler(logging.FileHandler(osp.join(self.save_path, 'raw_data', 'frames_drop.log')))
 
-        self.setup_directories()
-
-    def setup_directories(self):
-        os.makedirs(osp.join(self.save_path, 'raw_data', 'raw_skes_batches'), exist_ok=True)
-        os.makedirs(osp.join(self.save_path, 'raw_data', 'frames_drop_skes_batches'), exist_ok=True)
-        os.makedirs(osp.join(self.save_path, 'raw_data', 'frame_batches'), exist_ok=True)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--save_path', type=str, default='./')
-    parser.add_argument('--data_path', type=str, default='./')
-    parser.parse_args()
+    save_path = './'
 
-    save_path = parser.parse_args().save_path
-    data_path = parser.parse_args().data_path
+    skes_path = '../nturgbd_raw/nturgb+d_skeletons/'
+    stat_path = osp.join(save_path, 'statistics')
+    if not osp.exists('./raw_data'):
+        os.makedirs('./raw_data')
 
-    skelly = SkeletonProcessor()
+    skes_name_file = osp.join(stat_path, 'skes_available_name.txt')
+    save_data_pkl = osp.join(save_path, 'raw_data', 'raw_skes_data.pkl')
+    frames_drop_pkl = osp.join(save_path, 'raw_data', 'frames_drop_skes.pkl')
 
-    skelly.setup_paths(save_path, data_path)
+    frames_drop_logger = logging.getLogger('frames_drop')
+    frames_drop_logger.setLevel(logging.INFO)
+    frames_drop_logger.addHandler(logging.FileHandler(osp.join(save_path, 'raw_data', 'frames_drop.log')))
+    frames_drop_skes = dict()
 
-    skelly.get_raw_skes_data()
+
+    skelly = OriginalSkellyProcessor()
+    skelly.setup_paths(save_path, skes_path)
+
+
+    with open(frames_drop_pkl, 'wb') as fw:
+        pickle.dump(frames_drop_skes, fw, pickle.HIGHEST_PROTOCOL)
