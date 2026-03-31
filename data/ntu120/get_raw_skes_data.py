@@ -10,8 +10,6 @@ import logging
 
 from torch.distributed.rpc import new_method
 
-from data.ntu.seq_transformation import stat_path
-
 
 class SkeletonProcessor:
 
